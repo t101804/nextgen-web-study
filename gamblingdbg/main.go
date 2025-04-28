@@ -12,16 +12,14 @@ import (
 	"net/url"
 	"os"
 	"strconv"
-	"sync/atomic"
 	"time"
 
 	quic "github.com/quic-go/quic-go"
 	http3 "github.com/quic-go/quic-go/http3"
-	quicproxy "github.com/quic-go/quic-go/integrationtests/tools/proxy"
 )
 
 func main() {
-	pc1, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.2"), Port: 0})
+	pc1, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
 	if err != nil {
 		panic(err)
 	}
@@ -53,68 +51,64 @@ func main() {
 		panic(err)
 	}
 
-	var packetsPath1, packetsPath2 atomic.Int64
-	const rtt = 5 * time.Millisecond
-	proxy := quicproxy.Proxy{
-		Conn:       pc1,
-		ServerAddr: addr,
-		DelayPacket: func(dir quicproxy.Direction, from, to net.Addr, _ []byte) time.Duration {
-			var port int
-			switch dir {
-			case quicproxy.DirectionIncoming:
-				port = from.(*net.UDPAddr).Port
-			case quicproxy.DirectionOutgoing:
-				port = to.(*net.UDPAddr).Port
-			}
-			switch port {
-			case tr.Conn.LocalAddr().(*net.UDPAddr).Port:
-				packetsPath1.Add(1)
-			case tr2.Conn.LocalAddr().(*net.UDPAddr).Port:
-				packetsPath2.Add(1)
-			default:
-				fmt.Println("address not found", from)
-			}
-			return rtt / 2
-		},
-	}
-	if err = proxy.Start(); err != nil {
-		panic(err)
-	}
-	defer proxy.Close()
+	// var packetsPath1, packetsPath2 atomic.Int64
+	// const rtt = 5 * time.Millisecond
+	// proxy := quicproxy.Proxy{
+	// 	Conn:       pc1,
+	// 	ServerAddr: addr,
+	// 	// DelayPacket: func(dir quicproxy.Direction, from, to net.Addr, _ []byte) time.Duration {
+	// 	// 	var port int
+	// 	// 	switch dir {
+	// 	// 	case quicproxy.DirectionIncoming:
+	// 	// 		port = from.(*net.UDPAddr).Port
+	// 	// 	case quicproxy.DirectionOutgoing:
+	// 	// 		port = to.(*net.UDPAddr).Port
+	// 	// 	}
+	// 	// 	switch port {
+	// 	// 	case tr.Conn.LocalAddr().(*net.UDPAddr).Port:
+	// 	// 		packetsPath1.Add(1)
+	// 	// 	case tr2.Conn.LocalAddr().(*net.UDPAddr).Port:
+	// 	// 		packetsPath2.Add(1)
+	// 	// 	default:
+	// 	// 		fmt.Println("address not found", from)
+	// 	// 	}
+	// 	// 	return rtt / 2
+	// 	// },
+	// }
+	// if err = proxy.Start(); err != nil {
+	// 	panic(err)
+	// }
+	// defer proxy.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	conn, err := tr.Dial(ctx, proxy.LocalAddr(), tlsConf, quicConf)
+	// fmt.Printf("running proxy on %s\n", proxy.LocalAddr().String())
+	// fmt.Println("starting dialing the proxy")
+	// if using proxy dialing proxy.LocalAddr()
+	conn, err := tr.Dial(ctx, addr, tlsConf, quicConf)
 	if err != nil {
 		panic(err)
 	}
 	defer conn.CloseWithError(0, "")
 
-	// str, err := conn.OpenUniStream()
-	// if err != nil {
-	// 	panic(err)
-	// }
+	h3tr := &http3.Transport{
+		TLSClientConfig: &tls.Config{
+			ClientSessionCache: tls.NewLRUClientSessionCache(100),
+		},
 
-	// str.Close()
+		Dial: func(ctx context.Context, addr string, tlsConf *tls.Config, quicConf *quic.Config) (quic.EarlyConnection, error) {
+			a, err := net.ResolveUDPAddr("udp", addr)
+			if err != nil {
+				return nil, err
+			}
+			return tr2.DialEarly(ctx, a, tlsConf, quicConf)
+		},
+	}
+	defer h3tr.Close()
 
-	// h3tr := &http3.Transport{
-	// 	TLSClientConfig: &tls.Config{
-	// 		ClientSessionCache: tls.NewLRUClientSessionCache(100),
-	// 	},
-
-	// 	Dial: func(ctx context.Context, addr string, tlsConf *tls.Config, quicConf *quic.Config) (quic.EarlyConnection, error) {
-	// 		a, err := net.ResolveUDPAddr("udp", addr)
-	// 		if err != nil {
-	// 			return nil, err
-	// 		}
-	// 		return tr2.DialEarly(ctx, a, tlsConf, quicConf)
-	// 	},
-	// }
-	// defer h3tr.Close()
-
-	// cc := h3tr.NewClientConn(conn)
-	// sendRequest(ctx, cc, "first-payload")
+	cc := h3tr.NewClientConn(conn)
+	sendRequest(ctx, cc, "first-payload")
 
 	// sendRequest(ctx, cc, "second-payload")
 
