@@ -7,11 +7,11 @@ use http::{Request, StatusCode};
 use quinn::{Endpoint, ServerConfig};
 use rcgen::{CertifiedKey, generate_simple_self_signed};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
-use std::{error::Error, net::SocketAddr, sync::Arc, thread::sleep, vec};
+use std::{error::Error, net::{Ipv4Addr, SocketAddr}, sync::Arc, thread::sleep, vec};
 
 // const SERVER_NAME: &str = "localhost";
-const LOCALHOST_V4: std::net::IpAddr = std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
-const SERVER_ADDR: SocketAddr = SocketAddr::new(LOCALHOST_V4, 5001);
+// const LOCALHOST_V4: std::net::IpAddr = std::net::IpAddr::V4("0.0.0.0");
+const SERVER_ADDR: SocketAddr = SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 5001);
 // const LOCALHOST_V6: std::net::IpAddr = std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST);
 // const SERVER_ADDR_V6: SocketAddr = SocketAddr::new(LOCALHOST_V6, 5001);
 
