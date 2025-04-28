@@ -108,34 +108,42 @@ func main() {
 	defer h3tr.Close()
 
 	cc := h3tr.NewClientConn(conn)
-	sendRequest(ctx, cc, "first-payload")
+	stream, err := initRequests(
+		ctx,
+		&http.Request{
+			Method: http.MethodPost,
+			URL:    &url.URL{Scheme: "https", Host: "127.0.0.1:5001"},
+			Header: http.Header{"User-Agent": {"migrate-client"}},
+		}, cc)
+	if err != nil {
+		log.Fatalf("initRequests failed: %v", err)
+	}
 
-	// sendRequest(ctx, cc, "second-payload")
+	writeReadStream(stream, "first-payload")
 
 }
 
-func sendRequest(ctx context.Context, cc *http3.ClientConn, payload string) {
+func initRequests(ctx context.Context, req *http.Request, cc *http3.ClientConn) (http3.RequestStream, error) {
 	stream, err := cc.OpenRequestStream(ctx)
 	if err != nil {
-		log.Fatalf("OpenRequestStream: %v", err)
-	}
-
-	req := &http.Request{
-		Method: http.MethodPost,
-		URL:    &url.URL{Scheme: "https", Host: "127.0.0.1:5001"},
-		Header: http.Header{"User-Agent": {"migrate-client"}},
+		return nil, fmt.Errorf("OpenRequestStream: %w", err)
 	}
 	if err := stream.SendRequestHeader(req); err != nil {
-		log.Fatalf("SendRequestHeader: %v", err)
+		return nil, fmt.Errorf("SendRequestHeader: %w", err)
 	}
+	return stream, nil
+}
 
+func writeReadStream(stream http3.RequestStream, payload string) {
 	if _, err := stream.Write([]byte(payload)); err != nil {
 		log.Fatalf("Write: %v", err)
 	}
+	// scale_duration(20 * time.Second)
+	// stream.
+	time.Sleep(scale_duration(20 * time.Second))
 	if err := stream.Close(); err != nil {
-		log.Fatalf("Stream.Close: %v", err)
+		log.Fatalf("Close: %v", err)
 	}
-
 	resp, err := stream.ReadResponse()
 	if err != nil {
 		log.Fatalf("ReadResponse: %v", err)
@@ -144,7 +152,6 @@ func sendRequest(ctx context.Context, cc *http3.ClientConn, payload string) {
 	body, _ := io.ReadAll(resp.Body)
 	fmt.Printf("← response for %q: %q\n\n", payload, string(body))
 }
-
 func scale_duration(t time.Duration) time.Duration {
 	scaleFactor := 1
 	if f, err := strconv.Atoi(os.Getenv("TIMESCALE_FACTOR")); err == nil { // parsing "" errors, so this works fine if the env is not set
